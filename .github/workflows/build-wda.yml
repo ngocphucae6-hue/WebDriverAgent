@@ -78,6 +78,10 @@ jobs:
           fi
           echo "Signing app: $APP"
           plutil -replace CFBundleIdentifier -string "$CI_BUNDLE_ID" "$APP/Info.plist"
+          find "$APP" -type d -name "*.dSYM" -print -prune -exec rm -rf {} \;
+          if [ -d "$APP/PlugIns/WebDriverAgentRunner.xctest" ]; then
+            plutil -replace CFBundleIdentifier -string "$CI_BUNDLE_ID.xctest" "$APP/PlugIns/WebDriverAgentRunner.xctest/Info.plist"
+          fi
           cp ~/Library/MobileDevice/Provisioning\ Profiles/profile.mobileprovision "$APP/embedded.mobileprovision"
           find "$APP" -type d \( -name "*.framework" -o -name "*.xctest" -o -name "*.appex" \) -print0 | while IFS= read -r -d '' item; do
             echo "Signing nested: $item"
