@@ -51,6 +51,7 @@ jobs:
 
       - name: Build WebDriverAgentRunner
         run: |
+          set -o pipefail
           xcodebuild build-for-testing \
             -project WebDriverAgent.xcodeproj \
             -scheme WebDriverAgentRunner \
