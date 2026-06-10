@@ -110,6 +110,8 @@ jobs:
             name=$(basename "$app")
             echo "Copying app: $app -> build/artifacts/$name"
             ditto "$app" "build/artifacts/$name"
+            mkdir -p build/artifacts/Payload
+            ditto "$app" "build/artifacts/Payload/$name"
           done < <(find build/DerivedData -type d -name "*.app" -print)
           cp build.log build/artifacts/build.log || true
           if [ -z "$(find build/artifacts -mindepth 1 -print -quit)" ]; then
@@ -119,6 +121,9 @@ jobs:
           fi
           cd build/artifacts
           ls -la
+          if [ -d Payload ]; then
+            zip -r WebDriverAgentRunner.ipa Payload
+          fi
           zip -r WebDriverAgentRunner.zip .
 
       - uses: actions/upload-artifact@v4
