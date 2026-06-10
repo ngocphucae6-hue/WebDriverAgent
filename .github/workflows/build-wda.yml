@@ -5,9 +5,9 @@ on:
     branches: [master, main]
 
 env:
-  CI_BUNDLE_ID: com.xcode.testvnaffapi.vip
-  CI_TEAM_ID: 5993KYB2L9
-  CI_PROFILE_NAME: AllNaffa2
+  CI_BUNDLE_ID: com.20251224.11
+  CI_TEAM_ID: H4AD2QD4W8
+  CI_PROFILE_NAME: AllDevices_alex67chinii_talzm_com_20251224_221344
   CI_P12_PASSWORD: 123
 
 jobs:
@@ -65,14 +65,26 @@ jobs:
       - name: Package artifact
         run: |
           mkdir -p build/artifacts
-          find build/DerivedData -name "*.xctestrun" -exec cp {} build/artifacts/ \;
-          for app in $(find build/DerivedData -name "*.app" -type d); do
+          echo "=== Built app candidates ==="
+          find build/DerivedData -type d -name "*.app" -print || true
+          echo "=== xctestrun candidates ==="
+          find build/DerivedData -type f -name "*.xctestrun" -print || true
+          find build/DerivedData -type f -name "*.xctestrun" -exec cp {} build/artifacts/ \;
+          while IFS= read -r app; do
+            [ -z "$app" ] && continue
             name=$(basename "$app")
+            echo "Copying app: $app -> build/artifacts/$name"
             ditto "$app" "build/artifacts/$name"
-          done
+          done < <(find build/DerivedData -type d -name "*.app" -print)
+          cp build.log build/artifacts/build.log || true
+          if [ -z "$(find build/artifacts -mindepth 1 -print -quit)" ]; then
+            echo "No artifacts found. DerivedData contents:"
+            find build/DerivedData -maxdepth 8 -print
+            exit 1
+          fi
           cd build/artifacts
-          zip -r WebDriverAgentRunner.zip .
           ls -la
+          zip -r WebDriverAgentRunner.zip .
 
       - uses: actions/upload-artifact@v4
         with:
