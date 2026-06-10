@@ -5,9 +5,9 @@ on:
     branches: [master, main]
 
 env:
-  CI_BUNDLE_ID: com.20251224.11
-  CI_TEAM_ID: H4AD2QD4W8
-  CI_PROFILE_NAME: AllDevices_alex67chinii_talzm_com_20251224_221344
+  CI_BUNDLE_ID: com.xcode.testvnaffapi.vip
+  CI_TEAM_ID: 5993KYB2L9
+  CI_PROFILE_NAME: AllNaffa2
   CI_P12_PASSWORD: 123
 
 jobs:
@@ -39,14 +39,11 @@ jobs:
 
       - name: Patch bundle ID to match provisioning profile
         run: |
-          # Change WebDriverAgentRunner's bundle ID
-          find . -path "*/WebDriverAgentRunner/Info.plist" -exec plutil -replace CFBundleIdentifier -string "$CI_BUNDLE_ID" {} \;
-          # Change the test runner bundle ID
-          find . -path "*/WebDriverAgentRunner.xctest/Info.plist" -exec plutil -replace CFBundleIdentifier -string "$CI_BUNDLE_ID.xctrunner" {} \;
-          # Find and patch any xcscheme or pbxproj references
-          find . -name "*.pbxproj" -exec sed -i '' "s/com\\.facebook\\.WebDriverAgentRunner/$CI_BUNDLE_ID/g" {} +
-          find . -name "*.xcscheme" -exec sed -i '' "s/com\\.facebook\\.WebDriverAgentRunner/$CI_BUNDLE_ID/g" {} +
-          find . -name "*.plist" -not -path "*/Pods/*" -exec sed -i '' "s/com\\.facebook\\.WebDriverAgentRunner/$CI_BUNDLE_ID/g" {} +
+          find . -name "*.pbxproj" -exec sed -i '' "s/com\\.facebook\\.WebDriverAgentRunner/$CI_BUNDLE_ID/g; s/com\\.facebook\\.WebDriverAgentLib/$CI_BUNDLE_ID.lib/g" {} +
+          find . -name "*.xcscheme" -exec sed -i '' "s/com\\.facebook\\.WebDriverAgentRunner/$CI_BUNDLE_ID/g; s/com\\.facebook\\.WebDriverAgentLib/$CI_BUNDLE_ID.lib/g" {} +
+          find . -name "*.plist" -not -path "*/Pods/*" -exec sed -i '' "s/com\\.facebook\\.WebDriverAgentRunner/$CI_BUNDLE_ID/g; s/com\\.facebook\\.WebDriverAgentLib/$CI_BUNDLE_ID.lib/g" {} +
+          plutil -replace CFBundleIdentifier -string "$CI_BUNDLE_ID" WebDriverAgentRunner/Info.plist
+          plutil -replace CFBundleIdentifier -string "$CI_BUNDLE_ID.lib" WebDriverAgentLib/Info.plist
           echo "Bundle IDs patched to $CI_BUNDLE_ID"
 
       - name: Build WebDriverAgentRunner
@@ -58,10 +55,43 @@ jobs:
             -configuration Release \
             -destination 'generic/platform=iOS' \
             -derivedDataPath build/DerivedData \
-            CODE_SIGN_STYLE=Manual \
-            DEVELOPMENT_TEAM="$CI_TEAM_ID" \
-            PROVISIONING_PROFILE_SPECIFIER="$CI_PROFILE_NAME" \
-            PRODUCT_BUNDLE_IDENTIFIER="$CI_BUNDLE_ID" 2>&1 | tee build.log
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" 2>&1 | tee build.log
+
+      - name: Re-sign runner app with provided development profile
+        run: |
+          set -euo pipefail
+          security cms -D -i ~/Library/MobileDevice/Provisioning\ Profiles/profile.mobileprovision > /tmp/profile.plist
+          /usr/libexec/PlistBuddy -x -c 'Print :Entitlements' /tmp/profile.plist > /tmp/entitlements.plist
+          IDENTITY=$(security find-identity -v -p codesigning | awk -F '"' '/Apple Development/ {print $2; exit}')
+          if [ -z "$IDENTITY" ]; then
+            echo "No Apple Development signing identity found"
+            security find-identity -v -p codesigning
+            exit 1
+          fi
+          APP=$(find build/DerivedData -type d -name "*.app" | head -n 1)
+          if [ -z "$APP" ]; then
+            echo "No runner .app found before signing"
+            find build/DerivedData -maxdepth 8 -print
+            exit 1
+          fi
+          echo "Signing app: $APP"
+          plutil -replace CFBundleIdentifier -string "$CI_BUNDLE_ID" "$APP/Info.plist"
+          cp ~/Library/MobileDevice/Provisioning\ Profiles/profile.mobileprovision "$APP/embedded.mobileprovision"
+          find "$APP" -type d \( -name "*.framework" -o -name "*.xctest" -o -name "*.appex" \) -print0 | while IFS= read -r -d '' item; do
+            echo "Signing nested: $item"
+            codesign --force --sign "$IDENTITY" --timestamp=none "$item"
+          done
+          codesign --force --sign "$IDENTITY" --entitlements /tmp/entitlements.plist --timestamp=none "$APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+
+          for xctestrun in $(find build/DerivedData -type f -name "*.xctestrun"); do
+            echo "Patching xctestrun: $xctestrun"
+            plutil -convert xml1 "$xctestrun"
+            sed -i '' "s/$CI_BUNDLE_ID\.xctrunner/$CI_BUNDLE_ID/g" "$xctestrun"
+            plutil -convert binary1 "$xctestrun" || true
+          done
 
       - name: Package artifact
         run: |
