@@ -1,0 +1,64 @@
+# Build WebDriverAgentRunner on Codemagic.
+# Do not commit provisioning profiles or certificates into GitHub.
+# Upload your profile in Codemagic UI: Teams > Code signing identities > iOS provisioning profiles.
+
+workflows:
+  build-webdriveragent-runner:
+    name: Build WebDriverAgentRunner IPA
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+
+    environment:
+      xcode: latest
+      vars:
+        WDA_PROJECT: WebDriverAgent.xcodeproj
+        WDA_SCHEME: WebDriverAgentRunner
+        WDA_CONFIGURATION: Release
+        WDA_BUNDLE_ID: com.facebook.WebDriverAgentRunner
+        WDA_RUNNER_BUNDLE_ID: com.facebook.WebDriverAgentRunner.xctrunner
+
+    scripts:
+      - name: Show Xcode version
+        script: |
+          xcodebuild -version
+
+      - name: Prepare keychain and profiles
+        script: |
+          keychain initialize
+          app-store-connect fetch-signing-files "$WDA_RUNNER_BUNDLE_ID" \
+            --type IOS_DEVELOPMENT \
+            --create
+          keychain add-certificates
+          xcode-project use-profiles
+
+      - name: Build WebDriverAgentRunner
+        script: |
+          xcodebuild build-for-testing \
+            -project "$WDA_PROJECT" \
+            -scheme "$WDA_SCHEME" \
+            -configuration "$WDA_CONFIGURATION" \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGN_STYLE=Automatic \
+            PRODUCT_BUNDLE_IDENTIFIER="$WDA_BUNDLE_ID"
+
+      - name: Package runner artifacts
+        script: |
+          mkdir -p build/artifacts
+          find build/DerivedData -name "*.xctestrun" -print -exec cp {} build/artifacts/ \;
+          find build/DerivedData -path "*WebDriverAgentRunner-Runner.app" -type d -print -exec sh -c 'ditto "$1" build/artifacts/WebDriverAgentRunner-Runner.app' sh {} \;
+          cd build/artifacts
+          zip -r WebDriverAgentRunner.zip WebDriverAgentRunner-Runner.app *.xctestrun
+
+    artifacts:
+      - build/artifacts/WebDriverAgentRunner.zip
+      - build/artifacts/*.xctestrun
+      - build/artifacts/WebDriverAgentRunner-Runner.app
+
+    publishing:
+      email:
+        recipients:
+          - $CM_BUILD_INITIATOR_EMAIL
+        notify:
+          success: true
+          failure: true
