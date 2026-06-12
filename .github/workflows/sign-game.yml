@@ -1,11 +1,6 @@
 name: Sign Game IPA
 on:
   workflow_dispatch:
-    inputs:
-      release_id:
-        description: 'Release tag containing the IPA'
-        required: true
-        default: 'stickerroom-input'
 
 env:
   CI_BUNDLE_ID: com.xcode.testvnaffapi.vip
@@ -21,7 +16,7 @@ jobs:
 
       - name: Download IPA from release
         run: |
-          gh release download "${{ github.event.inputs.release_id }}" --repo ngocphucae6-hue/WebDriverAgent --pattern "*.ipa" --dir /tmp/ipa_download 2>&1
+          gh release download stickerroom-input --repo ngocphucae6-hue/WebDriverAgent --pattern "*.ipa" --dir /tmp/ipa_download
           mv /tmp/ipa_download/*.ipa input.ipa
           ls -la input.ipa
         env:
@@ -57,30 +52,18 @@ jobs:
 
       - name: Extract entitlements
         run: |
-          python3 -c "
-import os, plistlib, subprocess
-home = os.path.expanduser('~')
-subprocess.run(['security', 'cms', '-D', '-i', home + '/Library/MobileDevice/Provisioning Profiles/profile.mobileprovision', '-o', '/tmp/profile.plist'], check=True)
-with open('/tmp/profile.plist', 'rb') as f:
-    profile = plistlib.load(f)
-ent = profile['Entitlements']
-team = profile.get('TeamIdentifier', [''])[0]
-ent['application-identifier'] = team + '.' + os.environ['CI_BUNDLE_ID']
-with open('/tmp/entitlements.plist', 'wb') as f:
-    plistlib.dump(ent, f)
-print('OK entitlements:', list(ent.keys()))
-" 2>&1
+          python3 scripts/extract_entitlements.py
 
       - name: Sign with native codesign
         run: |
           find "$APP_PATH" -name "*.framework" -type d | while read fw; do
-            codesign -f -s "$CERT_IDENTITY" --timestamp=none "$fw" 2>&1
+            codesign -f -s "$CERT_IDENTITY" --timestamp=none "$fw"
           done
           find "$APP_PATH" -name "*.dylib" | while read dylib; do
-            codesign -f -s "$CERT_IDENTITY" --timestamp=none "$dylib" 2>&1
+            codesign -f -s "$CERT_IDENTITY" --timestamp=none "$dylib"
           done
-          codesign -f -s "$CERT_IDENTITY" --timestamp=none --entitlements /tmp/entitlements.plist "$APP_PATH" 2>&1
-          codesign -dvvv "$APP_PATH" 2>&1
+          codesign -f -s "$CERT_IDENTITY" --timestamp=none --entitlements /tmp/entitlements.plist "$APP_PATH"
+          codesign -dvvv "$APP_PATH"
 
       - name: Repackage as IPA
         run: |
