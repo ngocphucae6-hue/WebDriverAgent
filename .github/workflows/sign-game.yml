@@ -58,16 +58,17 @@ jobs:
       - name: Extract entitlements
         run: |
           python3 -c "
-import plistlib, subprocess
-subprocess.run(['security', 'cms', '-D', '-i', os.path.expanduser('~/Library/MobileDevice/Provisioning Profiles/profile.mobileprovision'), '-o', '/tmp/profile.plist'], check=True)
+import os, plistlib, subprocess
+home = os.path.expanduser('~')
+subprocess.run(['security', 'cms', '-D', '-i', home + '/Library/MobileDevice/Provisioning Profiles/profile.mobileprovision', '-o', '/tmp/profile.plist'], check=True)
 with open('/tmp/profile.plist', 'rb') as f:
     profile = plistlib.load(f)
 ent = profile['Entitlements']
 team = profile.get('TeamIdentifier', [''])[0]
-ent['application-identifier'] = f'{team}.{os.environ[\"CI_BUNDLE_ID\"]}'
+ent['application-identifier'] = team + '.' + os.environ['CI_BUNDLE_ID']
 with open('/tmp/entitlements.plist', 'wb') as f:
     plistlib.dump(ent, f)
-print('Entitlements extracted:', list(ent.keys()))
+print('OK entitlements:', list(ent.keys()))
 " 2>&1
 
       - name: Sign with native codesign
