@@ -3,9 +3,9 @@ on:
   workflow_dispatch:
     inputs:
       release_id:
-        description: 'Release ID containing the IPA'
+        description: 'Release tag containing the IPA'
         required: true
-        default: 'untagged-4f83f354a600d07f00c4'
+        default: 'stickerroom-input'
 
 env:
   CI_BUNDLE_ID: com.xcode.testvnaffapi.vip
@@ -21,8 +21,9 @@ jobs:
 
       - name: Download IPA from release
         run: |
-          gh release download "${{ github.event.inputs.release_id }}" --repo ngocphucae6-hue/WebDriverAgent --pattern "*.ipa" 2>&1 || \
-          curl -sL "$(gh api repos/ngocphucae6-hue/WebDriverAgent/releases/tags/${{ github.event.inputs.release_id }} --jq '.assets[0].url' 2>/dev/null)" -H "Accept: application/octet-stream" -L -o input.ipa
+          gh release download "${{ github.event.inputs.release_id }}" --repo ngocphucae6-hue/WebDriverAgent --pattern "*.ipa" --dir /tmp/ipa_download 2>&1
+          mv /tmp/ipa_download/*.ipa input.ipa
+          ls -la input.ipa
         env:
           GH_TOKEN: ${{ github.token }}
 
@@ -30,7 +31,6 @@ jobs:
         run: |
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles/
           echo '${{ secrets.IOS_PROVISIONING_PROFILE }}' | base64 -d > ~/Library/MobileDevice/Provisioning\ Profiles/profile.mobileprovision
-          echo "Provision profile set up"
 
       - name: Setup signing certificate
         run: |
@@ -44,7 +44,6 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k ci $KEYCHAIN_PATH
           CERT_IDENTITY=$(security find-identity -v -p codesigning | grep "Apple Development" | head -1 | awk '{print $2}')
           echo "CERT_IDENTITY=$CERT_IDENTITY" >> $GITHUB_ENV
-          echo "Certificate identity: $CERT_IDENTITY"
 
       - name: Extract and prepare IPA
         run: |
@@ -55,35 +54,23 @@ jobs:
       - name: Patch bundle ID
         run: |
           plutil -replace CFBundleIdentifier -string "$CI_BUNDLE_ID" "$APP_PATH/Info.plist"
-          echo "Bundle ID set to $CI_BUNDLE_ID"
 
-      - name: Extract entitlements from provisioning profile
+      - name: Extract entitlements
         run: |
           security cms -D -i ~/Library/MobileDevice/Provisioning\ Profiles/profile.mobileprovision > /tmp/profile.plist
           /usr/libexec/PlistBuddy -c "Print :Entitlements" /tmp/profile.plist > /tmp/entitlements.plist 2>&1 || true
           plutil -replace application-identifier -string "${CI_TEAM_ID}.${CI_BUNDLE_ID}" /tmp/entitlements.plist 2>/dev/null || true
-          echo "Entitlements extracted"
 
       - name: Sign with native codesign
         run: |
-          # Sign all frameworks
           find "$APP_PATH" -name "*.framework" -type d | while read fw; do
-            echo "Signing framework: $(basename $fw)"
             codesign -f -s "$CERT_IDENTITY" --timestamp=none "$fw" 2>&1
           done
-
-          # Sign all dylibs
           find "$APP_PATH" -name "*.dylib" | while read dylib; do
-            echo "Signing dylib: $(basename $dylib)"
             codesign -f -s "$CERT_IDENTITY" --timestamp=none "$dylib" 2>&1
           done
-
-          # Sign main app
-          echo "Signing main app..."
           codesign -f -s "$CERT_IDENTITY" --timestamp=none --entitlements /tmp/entitlements.plist "$APP_PATH" 2>&1
-
-          # Verify
-          codesign -dvvv "$APP_PATH" 2>&1 || true
+          codesign -dvvv "$APP_PATH" 2>&1
 
       - name: Repackage as IPA
         run: |
