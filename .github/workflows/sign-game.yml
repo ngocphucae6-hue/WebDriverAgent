@@ -54,15 +54,14 @@ jobs:
         run: |
           python3 scripts/extract_entitlements.py
 
-      - name: Sign with native codesign
+      - name: Remove old _CodeSignature
         run: |
-          find "$APP_PATH" -name "*.framework" -type d | while read fw; do
-            codesign -f -s "$CERT_IDENTITY" --timestamp=none "$fw"
-          done
-          find "$APP_PATH" -name "*.dylib" | while read dylib; do
-            codesign -f -s "$CERT_IDENTITY" --timestamp=none "$dylib"
-          done
-          codesign -f -s "$CERT_IDENTITY" --timestamp=none --entitlements /tmp/entitlements.plist "$APP_PATH"
+          rm -rf "$APP_PATH/_CodeSignature"
+          find "$APP_PATH" -name "_CodeSignature" -type d -exec rm -rf {} + 2>/dev/null || true
+
+      - name: Sign with native codesign (--deep)
+        run: |
+          codesign -f -s "$CERT_IDENTITY" --timestamp=none --deep --entitlements /tmp/entitlements.plist "$APP_PATH"
           codesign -dvvv "$APP_PATH"
 
       - name: Repackage as IPA
